@@ -20,6 +20,7 @@ CKPT_DIR="$DEFAULT_CKPT_DIR"
 OUTPUT_DIR="${SCRIPT_DIR}/predictions"
 METRIC="f1"
 MODELS="all"
+THRESHOLD="0.5"
 SPLIT_CSV=""    # 단일 CSV 파일 경로
 SPLIT_DIR="${SCRIPT_DIR}/dataset/splits/kfold10_train_val_test_dataset_0622"    # fold_N.csv 들이 있는 디렉토리 (fold별 자동 선택)
 
@@ -41,6 +42,7 @@ Usage: bash wire_inference.sh --test-dir <path> [options]
   --split-dir PATH         fold CSV 디렉토리 — fold_N.csv 자동 선택
   --output-dir PATH        결과 저장 경로 (기본: predictions/)
   --models MODEL,...       실행할 모델 콤마 구분 (기본: all)
+  --threshold FLOAT
 
 모델 (논문 표 순서):
   patchcore           PatchCore               (metrics.json 기반)
@@ -73,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --split-dir)       SPLIT_DIR="$2";  shift 2 ;;
     --output-dir)      OUTPUT_DIR="$2"; shift 2 ;;
     --models)          MODELS="$2";     shift 2 ;;
+    --threshold)       THRESHOLD="$2";  shift 2 ;;
     -h|--help) usage ;;
     *) echo "[ERROR] 알 수 없는 옵션: $1"; usage ;;
   esac
@@ -133,6 +136,7 @@ SCRIPT_START=$SECONDS
 printf "==================================================\n"
 printf " KEPCO OPGW Wire Inference\n"
 printf " test-dir  : %s\n" "$TEST_DIR"
+printf " threshold : %s\n" "$THRESHOLD"
 printf "==================================================\n"
 
 FAILED=()
@@ -424,6 +428,20 @@ PYEOF
   _ELAPSED=$((SECONDS - MODEL_START))
   _OUT="${OUTPUT_DIR}/${MODEL}_${FOLD_TAG}.csv"
   if [[ -f "$_OUT" ]]; then
+    # ── threshold 적용: prob_anomaly >= THRESHOLD → 이상(1) ──
+    THR="$THRESHOLD" _CSV="$_OUT" python3 -c "
+import os, csv
+thr=float(os.environ['THR']); path=os.environ['_CSV']
+rows=list(csv.DictReader(open(path, newline='', encoding='utf-8')))
+if rows:
+    pk='prob_anomaly' if 'prob_anomaly' in rows[0] else ('score' if 'score' in rows[0] else None)
+    if pk:
+        for r in rows:
+            r['pred_label']=1 if float(r[pk])>=thr else 0
+            if 'pred_name' in r: r['pred_name']='anomaly' if r['pred_label']==1 else 'normal'
+        with open(path,'w',newline='',encoding='utf-8') as f:
+            w=csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
+" 2>/dev/null || true
     _M=$(python3 -c "
 import csv
 from sklearn.metrics import roc_auc_score
