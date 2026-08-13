@@ -435,10 +435,8 @@ if rows:
     tp=sum(1 for a,b in zip(yt,yp) if a==1 and b==1)
     fp=sum(1 for a,b in zip(yt,yp) if a==0 and b==1)
     fn=sum(1 for a,b in zip(yt,yp) if a==1 and b==0)
-    tn=sum(1 for a,b in zip(yt,yp) if a==0 and b==0)
-    np_=tn/(tn+fn+1e-9); nr_=tn/(tn+fp+1e-9)
-    ap_=tp/(tp+fp+1e-9); ar_=tp/(tp+fn+1e-9)
-    pr=(np_+ap_)/2*100; rc=(nr_+ar_)/2*100
+    pr=tp/(tp+fp)*100 if tp+fp>0 else 0
+    rc=tp/(tp+fn)*100 if tp+fn>0 else 0
     f1=2*pr*rc/(pr+rc) if pr+rc>0 else 0
     try:
         auc=roc_auc_score(yt,ys)*100
